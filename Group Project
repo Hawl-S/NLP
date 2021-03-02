@@ -1,0 +1,97 @@
+import re
+import pandas as pd
+import time
+from sec_edgar_downloader import Downloader
+import os
+from bs4 import BeautifulSoup
+from nltk.stem import WordNetLemmatizer
+from nltk.corpus import stopwords
+from nltk.tokenize import RegexpTokenizer
+
+
+def get_filelist(dir):
+    
+    Filelist = []
+    
+    for home, dirs, files in os.walk(path + r'\sec-edgar-filings'):
+        for filename in files:
+            Filelist.append(os.path.join(home, filename))
+    return Filelist
+
+def get_8k(target_company):
+    
+    d1 = Downloader(path)
+    
+    for i in list(target_company):
+        try:
+            d1.get('8-K', i, after = '2016-01-01', before = '2021-01-01')
+            time.sleep(3)
+        except:
+            pass
+
+def data_clean(file_path):
+    
+    soup = BeautifulSoup(open(file_path, errors='ignore'))
+    
+    company_name = file_path[25:-45]
+    
+    data = soup.prettify()
+    
+    reg1 = re.compile("<[^>]*>")
+    res = reg1.sub('',data)
+    
+    reg2 = re.compile('[(].*?[)]')
+    res = reg2.sub(' ', res).lower()
+    
+    res = ' '.join(res.split())
+    
+
+    try:
+        reg3 = re.compile('dated*[:].*?[0-9]+\s*, [0-9]+')
+        date = reg3.findall(res)[0][6:]
+    except:
+        reg3 = re.compile('dated*[:]*.*?[0-9]+\s*, [0-9]+')
+        date = reg3.findall(res)[0][6:]
+    
+    res = res[res.find('item'):res.find('signiture')]
+    res = re.sub(r'\d+', '', res) 
+    
+    tokens = tokenizer.tokenize(res)
+    res_token = [i for i in tokens if i not in stop_words]
+    for j in range(len(res_token)):
+        res_token[j] = lemmatizer.lemmatize(res_token[j])
+    
+    res_cleaned = ' '.join(res_token)
+    
+    return [company_name, date, res_cleaned]
+
+
+
+
+if __name__ == '__main__':
+    
+    path = r'D:\nlp'
+
+    sp500 = pd.read_excel(path + '\sp500.xlsx')
+    sp500.columns = ['Symbol', 'Security', 'SEC filings', 'GICS', 'GICS Sub-Industry',
+          'Headquarters Location', 'Date first added', 'CIK', 'Founded']
+    target_company = sp500[sp500['GICS'] == 'Information Technology']['Symbol']
+    
+    Filelist_all = get_filelist(dir)
+    
+    Filelist = [x for x in Filelist_all  if x[-3:] != 'txt']
+    
+    
+    tokenizer = RegexpTokenizer(r'[a-z]+')                        # Delete punctuation after lower()
+    lemmatizer = WordNetLemmatizer()                              # Lemmatization
+    stop_words = set(stopwords.words('english'))                  # Delete stopword
+
+
+    data_cleaned = []
+    
+    for i in range(len(Filelist)):
+        data_cleaned.append(data_clean(Filelist[i]))
+        
+    data_cleaned_df = pd.DataFrame(data_cleaned, columns = ['Company_Name', 'Date', 'Text'])
+
+    data_cleaned_df.to_csv(path)
